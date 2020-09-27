@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"time"
 )
 
 func main() {
@@ -25,6 +24,6 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println("server>>", string(buf[:]))
-		time.Sleep(1 * time.Second)
+		// time.Sleep(1 * time.Second)
 	}
 }

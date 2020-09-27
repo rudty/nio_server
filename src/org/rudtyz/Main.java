@@ -3,6 +3,7 @@ package org.rudtyz;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
@@ -17,10 +18,10 @@ public class Main {
     }
 
     public static void doWrite(SelectionKey key) throws Exception {
-        SocketChannel client = (SocketChannel) key.channel();
+        var client = (SocketChannel) key.channel();
 
-        ReceiveBuffer buf = (ReceiveBuffer) key.attachment();
-        var sendBuffer = ByteBuffer.wrap(buf.getBuffer(), 0, buf.getReceiveLength());
+        var buf = (ReceiveBuffer) key.attachment();
+        var sendBuffer = buf.toByteBuffer();
         client.write(sendBuffer);
 
         client.register(Poll.selector, SelectionKey.OP_READ);
@@ -38,23 +39,32 @@ public class Main {
             return;
         }
 
-        var arr = buf.array();
-        System.out.println(new String(arr));
 
+        onMessage(client, buf.array(), receiveSize);
+    }
+
+
+    public static void write(SocketChannel client, ReceiveBuffer b) throws ClosedChannelException {
         client.register(
                 Poll.selector,
                 SelectionKey.OP_READ | SelectionKey.OP_WRITE,
-                new ReceiveBuffer(receiveSize, arr));
+                b);
+    }
+
+
+    public static void onMessage(SocketChannel client, byte[] b, int len) throws Exception{
+        System.out.println(new String(b, 0, len));
+        write(client, new ReceiveBuffer(b, len));
     }
 
     public static void main(String[] args) throws Exception {
-        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        var serverSocketChannel = ServerSocketChannel.open();
         serverSocketChannel.configureBlocking(false);
         serverSocketChannel.bind(new InetSocketAddress(8080));
         serverSocketChannel.register(Poll.selector, SelectionKey.OP_ACCEPT);
 
         while (true) {
-            if (Poll.selector.select(1L) > 0) {
+            if (Poll.selector.select(10L) > 0) {
                 var keys = Poll.selector.selectedKeys();
 
                 for (var key : keys) {
@@ -69,12 +79,9 @@ public class Main {
                     } else if (key.isReadable()) {
                         doRead(key);
                     }
-
-//                    key.cancel();
                 }
                 keys.clear();
             }
-            Thread.sleep(100);
         }
     }
 }
