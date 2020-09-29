@@ -8,12 +8,32 @@ import java.util.Set;
 public class NetPoll {
     public interface OnPoll{
         /**
-         * client poll 성공했을때 호출될 인터페이스
-         * @param ops SelectionKey 의 OP_READ, OP_WRITE, OP_CONNECT, OP_ACCEPT
+         * 클라이언트에서 메세지를 보낼 시 호출될 함수
          * @param channel 클라이언트
          * @param att register 에서 인자로 넣은 것
          */
-        void onPoll(int ops, SocketChannel channel, Object att);
+        void onRead(SocketChannel channel, Object att);
+
+        /**
+         * Write 호출 시 수행할 함수
+         * @param channel 클라이언트
+         * @param att register 에서 인자로 넣은 것
+         */
+        void onWrite(SocketChannel channel, Object att);
+
+        /**
+         * 클라이언트에서 연결 시도 시 호출될 함수
+         * @param channel 클라이언트
+         * @param att register 에서 인자로 넣은 것
+         */
+        void onConnect(SocketChannel channel, Object att);
+
+        /**
+         * 클라이언트와 연결되었을때 호출될 함수
+         * @param channel 클라이언트
+         * @param att register 에서 인자로 넣은 것
+         */
+        void onAccept(SocketChannel channel, Object att);
     }
 
     private final Selector selector;
@@ -70,13 +90,13 @@ public class NetPoll {
                 }
 
                 var att = key.attachment();
-
+                SocketChannel client = null;
                 if (key.isAcceptable()) {
                     try {
                         var server = (ServerSocketChannel) key.channel();
-                        var client = server.accept();
+                        client = server.accept();
                         if (client != null) {
-                            l.onPoll(SelectionKey.OP_ACCEPT, client, att);
+                            l.onAccept(client, att);
                         }
                         continue;
                     } catch (IOException ignore) {
@@ -84,25 +104,24 @@ public class NetPoll {
                     }
                 }
 
-                var client = (SocketChannel) key.channel();
-                int ops = 0;
+                client = (SocketChannel) key.channel();
 
                 if (client == null) {
                     continue;
                 }
                 if (!client.isConnected()) {
                     key.cancel();
+                } else {
+                    if (key.isWritable()) {
+                        l.onWrite(client, att);
+                    }
+                    if (key.isReadable()) {
+                        l.onRead(client, att);
+                    }
+                    if (key.isConnectable()) {
+                        l.onConnect(client, att);
+                    }
                 }
-                if (key.isWritable()) {
-                    ops = SelectionKey.OP_WRITE;
-                }
-                if (key.isReadable()) {
-                    ops = SelectionKey.OP_READ;
-                }
-                if (key.isConnectable()) {
-                    ops = SelectionKey.OP_CONNECT;
-                }
-                l.onPoll(ops, client, att);
             }
         }
         keys.clear();
