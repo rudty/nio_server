@@ -2,6 +2,8 @@ package org.rudtyz;
 
 import java.io.IOException;
 import java.nio.channels.*;
+import java.util.Collections;
+import java.util.Set;
 
 public class NetPoll {
     public interface OnPoll{
@@ -47,8 +49,19 @@ public class NetPoll {
         this.pollEventListener = l;
     }
 
+    private Set<SelectionKey> pollKeys(long timeout) {
+        try {
+            if (selector.select(timeout) > 0) {
+                return selector.selectedKeys();
+            }
+        } catch (IOException ignore) {
+
+        }
+        return Collections.emptySet();
+    }
+
     public void netPoll() {
-        var keys = selector.selectedKeys();
+        var keys = pollKeys(1L);
         var l = pollEventListener;
         if (l != null) {
             for (var key : keys) {

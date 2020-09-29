@@ -15,7 +15,7 @@ public class Server implements NetPoll.OnPoll{
     void listenAndServe(int port) throws IOException {
         serverChannel = ServerSocketChannel.open();
         serverChannel.configureBlocking(false);
-        serverChannel.bind(new InetSocketAddress(8080));
+        serverChannel.bind(new InetSocketAddress(port));
         poll.register(serverChannel, SelectionKey.OP_ACCEPT, null);
         poll.setOnPollEventListener(this);
         while (true) {
@@ -27,11 +27,16 @@ public class Server implements NetPoll.OnPoll{
     public void onPoll(int ops, SocketChannel channel, Object att) {
         switch (ops) {
             case SelectionKey.OP_READ:
-                doAccept(channel, att);
+                doRead(channel, att);
                 break;
             case SelectionKey.OP_WRITE:
+                doWrite(channel, att);
+                break;
             case SelectionKey.OP_ACCEPT:
+                doAccept(channel, att);
+                break;
             case SelectionKey.OP_CONNECT:
+                break;
         }
     }
 
