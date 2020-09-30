@@ -3,11 +3,10 @@ package org.rudtyz;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 
-public class Server implements NetPoll.OnPoll{
+public class Server implements NetPoll.OnPollEventListener{
     private ServerSocketChannel serverChannel = null;
     private NetPoll poll = new NetPoll();
 
@@ -15,7 +14,7 @@ public class Server implements NetPoll.OnPoll{
         serverChannel = ServerSocketChannel.open();
         serverChannel.configureBlocking(false);
         serverChannel.bind(new InetSocketAddress(port));
-        poll.register(serverChannel, SelectionKey.OP_ACCEPT, null);
+        poll.registerAccept(serverChannel, null);
         poll.setOnPollEventListener(this);
         while (true) {
             poll.netPoll();
@@ -23,70 +22,53 @@ public class Server implements NetPoll.OnPoll{
     }
 
 
-    public void write(SocketChannel client, ReceiveBuffer b) {
-        poll.register(client, SelectionKey.OP_READ | SelectionKey.OP_WRITE, b);
+    public void write(SocketChannel client, ReceiveBuffer b) throws IOException {
+        poll.registerReadAndWrite(client, b);
     }
 
 
-    public void onMessage(SocketChannel client, byte[] b, int len) {
+    public void onMessage(SocketChannel client, byte[] b, int len) throws IOException {
         System.out.println(new String(b, 0, len));
         write(client, new ReceiveBuffer(b, len));
     }
 
     @Override
-    public void onRead(SocketChannel client, Object att) {
+    public void onRead(SocketChannel client, Object att) throws IOException{
         ByteBuffer buf = ByteBuffer.allocate(1024);
-        try {
-            int receiveSize = client.read(buf);
+        int receiveSize = client.read(buf);
 
-            if (receiveSize <= 0) {
+        if (receiveSize <= 0) {
 //                key.cancel();
-                try {
-                    client.close();
-                } catch (IOException ignore) {
-                }
-                return;
-            }
-
-            poll.register(client, SelectionKey.OP_READ, null);
-
-            onMessage(client, buf.array(), receiveSize);
-        } catch (IOException ignore) {
-        }
-    }
-
-    @Override
-    public void onWrite(SocketChannel client, Object att) {
-        var buf = (ReceiveBuffer) att;
-        var sendBuffer = buf.toByteBuffer();
-        try {
-            client.write(sendBuffer);
-        } catch (IOException e) {
-            if (!client.isConnected()) {
-                return;
-            }
-            System.out.println("write fail");
-        }
-
-        poll.register(client, SelectionKey.OP_READ, null);
-    }
-
-    @Override
-    public void onConnect(SocketChannel client, Object att) {
-
-    }
-
-    @Override
-    public void onAccept(SocketChannel client, Object att) {
-        try {
-            client.configureBlocking(false);
-            poll.register(client, SelectionKey.OP_READ, null);
-        } catch (IOException e) {
-            System.out.println("client connect fail");
             try {
                 client.close();
             } catch (IOException ignore) {
             }
+            return;
         }
+
+        poll.registerRead(client,  null);
+
+        onMessage(client, buf.array(), receiveSize);
+
+    }
+
+    @Override
+    public void onWrite(SocketChannel client, Object att) throws IOException {
+        var buf = (ReceiveBuffer) att;
+        var sendBuffer = buf.toByteBuffer();
+        client.write(sendBuffer);
+
+        poll.registerRead(client, null);
+    }
+
+    @Override
+    public void onAccept(SocketChannel client, Object att) throws IOException {
+        poll.registerRead(client, null);
+
+    }
+
+    @Override
+    public void onIdle() {
+        System.out.println("IDLE");
     }
 }
