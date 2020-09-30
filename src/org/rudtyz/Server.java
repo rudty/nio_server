@@ -23,7 +23,7 @@ public class Server implements NetPoll.OnPollEventListener{
 
 
     public void write(SocketChannel client, ReceiveBuffer b) throws IOException {
-        poll.registerReadAndWrite(client, b);
+        poll.registerWrite(client, b);
     }
 
 
@@ -46,8 +46,6 @@ public class Server implements NetPoll.OnPollEventListener{
             return;
         }
 
-        poll.registerRead(client,  null);
-
         onMessage(client, buf.array(), receiveSize);
 
     }
@@ -57,13 +55,10 @@ public class Server implements NetPoll.OnPollEventListener{
         var buf = (ReceiveBuffer) att;
         var sendBuffer = buf.toByteBuffer();
         client.write(sendBuffer);
-
-        poll.registerRead(client, null);
     }
 
     @Override
     public void onAccept(SocketChannel client, Object att) throws IOException {
-        poll.registerRead(client, null);
 
     }
 

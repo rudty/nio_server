@@ -2,7 +2,6 @@ package org.rudtyz;
 
 import java.io.IOException;
 import java.nio.channels.*;
-import java.nio.channels.spi.AbstractSelectableChannel;
 import java.util.Collections;
 import java.util.Set;
 
@@ -38,7 +37,7 @@ public class NetPoll {
         void onIdle();
     }
     private final Selector serverSocketSelector;
-    private final Selector clientSocketSelector;
+    private final Selector readWriteSelector;
     private OnPollEventListener pollEventListener = null;
 
     private static long POLL_TIMEOUT = 1L;
@@ -46,31 +45,9 @@ public class NetPoll {
     public NetPoll() {
         try {
             serverSocketSelector = Selector.open();
-            clientSocketSelector = Selector.open();
+            readWriteSelector = Selector.open();
         } catch (IOException e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    private void register(SocketChannel channel, int ops, Object att) throws ClosedChannelException {
-        channel.register(clientSocketSelector, ops, att);
-    }
-
-    public void registerRead(SocketChannel channel, Object att) throws ClosedChannelException {
-        if (channel.isConnected()) {
-            register(channel, SelectionKey.OP_READ, att);
-        }
-    }
-
-    public void registerWrite(SocketChannel channel, Object att) throws ClosedChannelException {
-        if (channel.isConnected()) {
-            register(channel, SelectionKey.OP_WRITE, att);
-        }
-    }
-
-    public void registerReadAndWrite(SocketChannel channel, Object att) throws ClosedChannelException {
-        if (channel.isConnected()) {
-            register(channel, SelectionKey.OP_READ | SelectionKey.OP_WRITE, att);
         }
     }
 
@@ -121,6 +98,7 @@ public class NetPoll {
                     var client = server.accept();
                     if (client != null) {
                         client.configureBlocking(false);
+                        client.register(readWriteSelector, SelectionKey.OP_READ, new NetPollTask(this::callRead, null));
                         l.onAccept(client, key.attachment());
                         acceptChannels += 1;
                     }
@@ -133,8 +111,40 @@ public class NetPoll {
         return acceptChannels;
     }
 
+    private void callRead(SocketChannel client, Object att) throws IOException {
+        var l = pollEventListener;
+        if (l != null) {
+            l.onRead(client, att);
+        }
+    }
+
+    private void callWrite(SocketChannel client, Object att) throws IOException {
+        var l = pollEventListener;
+        if (l != null) {
+            l.onWrite(client, att);
+        }
+    }
+
+    /**
+     * 다음 poll 시 write
+     * @param channel 클라
+     * @param att 저장할 값 아무거나 (callback 에서 받음)
+     * @throws ClosedChannelException 클라에서 연결을 종료하였음
+     */
+    public void registerWrite(SocketChannel channel, Object att) throws ClosedChannelException {
+        if (channel.isConnected()) {
+            channel.register(readWriteSelector,
+                    SelectionKey.OP_READ | SelectionKey.OP_WRITE,
+                    new NetPollTask(this::callWrite, att));
+        }
+    }
+
+    /**
+     * read, write 시의 poll 동작
+     * @return 몇개의 read, write 작업을 했는지
+     */
     private int pollClient() {
-        var keys = pollKeys(clientSocketSelector, POLL_TIMEOUT);
+        var keys = pollKeys(readWriteSelector, POLL_TIMEOUT);
         var l = pollEventListener;
         int readWriteChannels = 0;
         if (l != null) {
@@ -145,30 +155,16 @@ public class NetPoll {
                     closeKey(key);
                     continue;
                 }
+
                 try {
-                    if (key.isWritable()) {
-                        try {
-                            l.onWrite(client, att);
-                        } catch (ClosedChannelException e) {
-                            throw e;
-                        } catch (Throwable ignore) {
-
-                        }
-                        readWriteChannels += 1;
-                    }
-
-                    if (key.isReadable()) {
-                        try {
-                            l.onRead(client, att);
-                        } catch (ClosedChannelException e) {
-                            throw e;
-                        } catch (Throwable ignore) {
-
-                        }
-                        readWriteChannels += 1;
-                    }
-                } catch (Throwable t) {
+                    client.register(readWriteSelector, SelectionKey.OP_READ, new NetPollTask(this::callRead, null));
+                    var task = (NetPollTask)att;
+                    task.run(client);
+                    readWriteChannels += 1;
+                } catch (IOException e) {
                     closeKey(key);
+                } catch (Throwable t) {
+                    t.printStackTrace();
                 }
             }
         }
@@ -177,6 +173,11 @@ public class NetPoll {
         return readWriteChannels;
     }
 
+    /**
+     * 밖에서 계속 이 함수를 호출해서 poll 작업을 수행
+     * 호출시 selector 를 검사해서 accept, read, write 작업이 있다면
+     * 해당 작업의 수행을, 없다면 idle 함수를 실행
+     */
     public void netPoll() {
         int w = 0;
         w += pollServer();
