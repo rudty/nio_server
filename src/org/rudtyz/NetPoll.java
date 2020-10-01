@@ -73,20 +73,6 @@ public class NetPoll {
         return Collections.emptySet();
     }
 
-    private void closeKey(SelectionKey key) {
-        var chan = key.channel();
-        try {
-            chan.close();
-        } catch (Exception ignore) {
-
-        }
-        try {
-            key.cancel();
-        } catch (Exception ignore) {
-
-        }
-    }
-
     private int pollServer() {
         var keys = pollKeys(serverSocketSelector, POLL_TIMEOUT);
         var l = pollEventListener;
@@ -139,6 +125,32 @@ public class NetPoll {
         }
     }
 
+    private void closeClient(SelectionKey key, SocketChannel channel) {
+        try {
+            if (channel != null) {
+                channel.close();
+            }
+        } catch (Exception ignore) {
+
+        }
+        try {
+            if (key != null) {
+                key.cancel();
+            }
+        } catch (Exception ignore) {
+
+        }
+    }
+
+    /**
+     * 클라이언트의 연결을 닫습니다
+     * @param channel 클라이언트
+     */
+    public void closeClient(SocketChannel channel) {
+        var key = channel.keyFor(readWriteSelector);
+        closeClient(key, channel);
+    }
+
     /**
      * read, write 시의 poll 동작
      * @return 몇개의 read, write 작업을 했는지
@@ -152,19 +164,25 @@ public class NetPoll {
                 var att = key.attachment();
                 var client = (SocketChannel) key.channel();
                 if (!client.isConnected()) {
-                    closeKey(key);
+                    closeClient(key, client);
                     continue;
                 }
 
                 try {
-                    client.register(readWriteSelector, SelectionKey.OP_READ, new NetPollTask(this::callRead, null));
+
+                     // 반드시 read 를 추가해서 두번 write 하지 않게 변경
+                    client.register(readWriteSelector,
+                            SelectionKey.OP_READ,
+                            new NetPollTask(this::callRead, null));
+
                     var task = (NetPollTask)att;
                     task.run(client);
                     readWriteChannels += 1;
                 } catch (IOException e) {
-                    closeKey(key);
+                    closeClient(key, client);
                 } catch (Throwable t) {
                     t.printStackTrace();
+                    closeClient(key, client);
                 }
             }
         }

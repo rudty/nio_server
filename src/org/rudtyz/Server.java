@@ -33,17 +33,12 @@ public class Server implements NetPoll.OnPollEventListener{
     }
 
     @Override
-    public void onRead(SocketChannel client, Object att) throws IOException{
+    public void onRead(SocketChannel client, Object att) throws IOException {
         ByteBuffer buf = ByteBuffer.allocate(1024);
         int receiveSize = client.read(buf);
 
         if (receiveSize <= 0) {
-//                key.cancel();
-            try {
-                client.close();
-            } catch (IOException ignore) {
-            }
-            return;
+            poll.closeClient(client);
         }
 
         onMessage(client, buf.array(), receiveSize);
