@@ -6,11 +6,11 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 
-public class Server implements NetPoll.OnPollEventListener{
+public class ServerBase implements NetPoll.OnPollEventListener{
     private ServerSocketChannel serverChannel = null;
     private NetPoll poll = new NetPoll();
 
-    void listenAndServe(int port) throws IOException {
+    public final void listenAndServe(int port) throws IOException {
         serverChannel = ServerSocketChannel.open();
         serverChannel.configureBlocking(false);
         serverChannel.bind(new InetSocketAddress(port));
@@ -21,19 +21,27 @@ public class Server implements NetPoll.OnPollEventListener{
         }
     }
 
-
-    public void write(SocketChannel client, ReceiveBuffer b) throws IOException {
+    public final void write(SocketChannel client, ReceiveBuffer b) throws IOException {
         poll.registerWrite(client, b);
     }
 
+    public final void write(SocketChannel client, byte[] b) throws IOException {
+        write(client, b, 0, b.length);
+    }
+
+    public final void write(SocketChannel client, byte[] b, int len) throws IOException {
+        write(client, b, 0, len);
+    }
+
+    public final void write(SocketChannel client, byte[] b, int offset, int len) throws IOException {
+        write(client, new ReceiveBuffer(b, offset, len));
+    }
 
     public void onMessage(SocketChannel client, byte[] b, int len) throws IOException {
-        System.out.println(new String(b, 0, len));
-        write(client, new ReceiveBuffer(b, len));
     }
 
     @Override
-    public void onRead(SocketChannel client, Object att) throws IOException {
+    public final void onRead(SocketChannel client, Object att) throws IOException {
         ByteBuffer buf = ByteBuffer.allocate(1024);
         int receiveSize = client.read(buf);
 
@@ -46,19 +54,18 @@ public class Server implements NetPoll.OnPollEventListener{
     }
 
     @Override
-    public void onWrite(SocketChannel client, Object att) throws IOException {
+    public final void onWrite(SocketChannel client, Object att) throws IOException {
         var buf = (ReceiveBuffer) att;
         var sendBuffer = buf.toByteBuffer();
         client.write(sendBuffer);
     }
 
     @Override
-    public void onAccept(SocketChannel client, Object att) throws IOException {
+    public final void onAccept(SocketChannel client, Object att) throws IOException {
 
     }
 
     @Override
     public void onIdle() {
-        System.out.println("IDLE");
     }
 }
